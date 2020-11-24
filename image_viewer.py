@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import threading
@@ -14,28 +15,25 @@ class ImageBrowser:
         :param passed: Default=None, filepath that runs the program. Default runs os.getcwd()
         """
 
-        self.height = 946
-        self.width = 1146
         self.open_file = ""
         self.entered = False
         self.file_list = []
         self.rotate_qty = 0
-
-        # ------Constants----------#
-        self.HORIZONTAL = "HORIZONTAL"
-        self.VERTICAL = "VERTICAL"
-        self.CCW = "CCW"
-        self.CW = "CW"
 
         # ------Program Window-----#
 
         self.window = tk.Tk()
         self.window.title("Image Viewer")
 
+        self.dimY = self.window.winfo_screenheight()
+        self.dimX = self.window.winfo_screenwidth()
+
+        self._resize_program()
+
         image = tk.PhotoImage(file="toolbar/iv_logo.png")
         self.window.iconphoto(False, image)
 
-        self.window.geometry("1450x1008+100+0")
+        self.window.geometry(f"{self.programX}x{self.programY}+100+0")
         self.window.resizable(width=False, height=False)
         self.window.config(background="gray75")
 
@@ -146,7 +144,7 @@ class ImageBrowser:
         self.top_frame = tk.Frame(self.window, background="gray75")
         self.top_frame.pack(side="top")
 
-        self.folder_frame = tk.Frame(self.top_frame, width=300, height=950, borderwidth=2, relief="flat",
+        self.folder_frame = tk.Frame(self.top_frame, width=300, height=self.height+4, borderwidth=2, relief="flat",
                                      background="gray30")
         self.folder_frame.pack(side="left", anchor="nw")
         self.folder_frame.pack_propagate(0)
@@ -167,9 +165,9 @@ class ImageBrowser:
         self.folder_text.config(yscrollcommand=self.folder_scroll.set)
         self.folder_scroll.config(command=self.folder_text.yview)
 
-        self.image_frame = tk.Frame(self.top_frame, height=950, width=1150, borderwidth=2, relief="flat",
-                                    background="gray30")
-        self.image_frame.pack(side="left", expand=True)
+        self.image_frame = tk.Frame(self.top_frame, height=self.height+4, width=self.width+4, borderwidth=2, relief="flat",
+                                    background="gray10")
+        self.image_frame.pack(side="left", expand=True, anchor=tk.CENTER)
         self.image_frame.pack_propagate(0)
 
         self.image_frame.bind("<Enter>", self.file_options_enter)
@@ -183,12 +181,12 @@ class ImageBrowser:
                                     background="gray10", borderwidth=2, relief="flat")
         self.image_label.pack(fill="both", expand=True)
         """
-        self.image_canvas = tk.Canvas(self.image_frame, height=946, width=1146, background="gray10", borderwidth=2,
+        self.image_canvas = tk.Canvas(self.image_frame, height=self.height, width=self.width, background="gray10", borderwidth=2,
                                       relief="flat")
-        self.image_canvas.pack(fill="both", expand=True)
-        self.image_canvas.create_image(1146/2, 946/2, image=render, anchor="center")
+        self.image_canvas.pack(anchor=tk.CENTER, fill="both")
+        self.image_canvas.create_image(self.width/2, self.height/2, image=render, anchor="center")
 
-        self.ID = ImageDisplay(self.image_canvas, 1146, 946)
+        self.ID = ImageDisplay(self.image_canvas, self.width, self.height)
 
         self.text_var = tk.StringVar()
         self.text_var.set("")
@@ -253,6 +251,13 @@ class ImageBrowser:
         self.file_option_next = tk.Button(self.file_option_bar, image=self.next_render, width=50, height=50,
                                           borderwidth=0, background="white", command=self._next_image)
         self.file_option_next.place(x=59, y=0)
+
+    def _resize_program(self):
+        self.width = self.dimX - 774
+        self.height = self.dimY - 134 - 25
+
+        self.programX = self.dimX - 470
+        self.programY = self.dimY - 72 - 25
 
     def _zoom(self):
         amount = int(self.zoom_amount.get())
@@ -461,30 +466,51 @@ class ImageDisplay:
                 h = self._height
                 w = self._width
             else:
-                if self._width > self._height:
-                    h = round(self._height / (self._width / self.width))
-                    w = self.width
+                _zoom_h = round((self._height + (self.height - self._height)) / self.true_height, 2)
+                _zoom_w = round((self._width + (self.width - self._width)) / self.true_width, 2)
+
+                if _zoom_h > _zoom_w:
+                    self.zoom(_zoom_w-.01)
+                    return
                 else:
-                    w = round(self._width / (self._height / self.height))
-                    h = self.height
+                    self.zoom(_zoom_h-.01)
+                    return
         else:
             h = self.zoom_height
             w = self.zoom_width
 
+        """
+        if not _zoom:
+            if h > self.height or w > self.width:
+                _zoom_h = round((h+(self.height-h))/self.true_height, 2)
+                _zoom_w = round((w+(self.width-w))/self.true_width, 2)
+
+                if _zoom_h > _zoom_w:
+                    self.zoom(_zoom_w)
+                else:
+                    self.zoom(_zoom_h)
+        """
+
         self.load = self.load.resize((w, h))
+
+        if not _zoom:
+            _check = self.zoom_percentage()
+            if _check > 100:
+                self.zoom(1)
+                return
+
         self.render = ImageTk.PhotoImage(self.load)
 
         if self.image.winfo_class() == "Label":
             self.image.configure(image=self.render)
         elif self.image.winfo_class() == "Canvas":
-            self._reset_widget()
             self.image.delete("all")
+            self._reset_widget((w-1, h-1))
             self.image.create_image(self.width / 2, self.height / 2, image=self.render, anchor=tk.CENTER)
         else:
             raise TypeError(f"TypeError: {self.image.winfo_class()} not supported!")
 
         self._scrollbars()
-
         self.image.focus()
 
     def _load_image(self, file):
@@ -568,6 +594,7 @@ class ImageDisplay:
         """
         if self.image.winfo_class() == "Canvas":
             _width, _height = self.load.size
+
             try:
                 self.verticalScroll.pack_forget()
             except AttributeError:
@@ -591,10 +618,15 @@ class ImageDisplay:
             else:
                 self.image.config(xscrollcommand=None, scrollregion=self.image.bbox("all"))
 
-    def _reset_widget(self):
-        self.image.pack_forget()
-        self.image.pack(fill="both", expand=True)
-
+    def _reset_widget(self, size):
+        if size[0] >= self.width or size[1] >= self.height:
+            self.image.configure(height=self.height, width=self.width)
+            self.image.pack_forget()
+            self.image.pack(fill="both", expand=True)
+        else:
+            self.image.configure(height=size[1], width=size[0])
+            self.image.pack_forget()
+            self.image.pack(anchor=tk.CENTER, expand=True)
 
 class FileCrawler:
 
